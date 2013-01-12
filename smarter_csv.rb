@@ -6,12 +6,15 @@ module SmarterCSV
 
 	class Parser
 		def initialize options={}
+
+			@potential_separators = [";",",","\t"]
+
 			@options = options
 
-			@separator = (options[:separator] or ";")
+			@separator =  options[:separator]
 			@quote     = (options[:quote] or "\"")
 			@newline   = (options[:newline] or "\n")
-			@escape    = (options[:escape] or "\\")
+			@escape    = (options[:escape] or ["\\", @quote])
 
 			@column    = 1
 			@line      = 1
@@ -39,6 +42,13 @@ module SmarterCSV
 			@field += token
 		end
 		def consume token
+
+			if !@separator and [:BEFORE_FIELD, :FIELD, :BEFORE_SEPARATOR].include?(@state)
+				if @potential_separators.include? token
+					@separator = token
+				end
+			end
+
 			#puts "#{@state} - Token: #{token}"
 			@state = case @state
 			when :BEFORE_FIELD
@@ -70,10 +80,10 @@ module SmarterCSV
 					:FIELD
 				end
 			when :QOTED_FIELD
-				case token
-				when @escape
+				if @escape.include? token
+					@last_escape_used = token
 					:MAYBE_ESCAPED_QUOTE
-				when @quote
+				elsif token == @quote
 					:BEFORE_SEPARATOR
 				else
 					push token
@@ -85,9 +95,14 @@ module SmarterCSV
 					push @quote
 					:QOTED_FIELD
 				else
-					push @escape
-					push @quote
-					:QOTED_FIELD
+					if @last_escape_used == @quote #misinterpreted quote as escape because they are the same
+						@state = :BEFORE_SEPARATOR
+						consume token
+					else
+						push @last_escape_used
+						push token
+						:QOTED_FIELD
+					end
 				end
 			when :BEFORE_SEPARATOR
 				case token
@@ -109,7 +124,9 @@ module SmarterCSV
 			else
 				@column += token.length
 			end
-			#puts "Switched to #{@state}"
+			#puts "[#{@line}:#{@column} - #{token}] Switched to #{@state}"
+			#if token == @quote then exit end
+			@state
 		end
 		def << str
 			str.each_char do |c|
@@ -265,6 +282,6 @@ t << data
 puts t
 end
 
-t=SmarterCSV.each_row_in_file("/home/fram/Downloads/_1.5.3.1_bk.csv") do |row|
+t=SmarterCSV.each_row_in_file "/home/fram/Downloads/_1.5.3.1.csv" do |row|
 	puts row
 end
